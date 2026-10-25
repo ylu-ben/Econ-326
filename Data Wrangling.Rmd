@@ -78,4 +78,7 @@ housing$nearest_art <- art_sf$name[nearest_art]
 housing$distance_art <- as.numeric(units::set_units(distance_art, 'm'))
 head(housing)
 ```
+```{r}
+#testing git
+```
 
