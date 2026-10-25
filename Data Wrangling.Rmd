@@ -1,0 +1,81 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+```{r}
+library(tidyverse)
+library(sf)
+library(jsonlite)
+```
+
+```{r}
+#Importing cleaned_canada
+data <- read_csv('cleaned_canada.csv')
+head(data)
+```
+
+```{r}
+#start filtering and summarizing data
+housing <- data|>
+  filter(City == 'Vancouver')|>
+  select(Latitude, Longitude, Price, Bedrooms, Bathrooms, `Property Type`, `Square Footage`, Garage, Pool, Garden)|>
+  rename(Type = `Property Type`, Sqft = `Square Footage`)
+  
+glimpse(housing)
+summary(housing)
+```
+```{r}
+#importing public parks and arts
+parks<-read_csv2('parks-polygon-representation.csv')|>
+  select(`Park Name`, geo_point_2d)|>
+  separate(col = geo_point_2d, into = c('Latitude', 'Longitude'), sep = ',', convert = TRUE, remove = TRUE)|>
+  rename(park_name = `Park Name`)
+art<-read_csv2('public-art.csv')|>
+  rename(name = `Title of Work`)|>
+  filter(!is.na(Geom))|>
+  mutate(longitude = vapply(Geom, function(x) {
+      jsonlite::fromJSON(x)$coordinates[1]
+    }, numeric(1)),
+    latitude = vapply(Geom, function(x) {
+      jsonlite::fromJSON(x)$coordinates[2]
+    }, numeric(1))
+  )|>
+  select(name, longitude, latitude)
+head(art)
+head(parks)
+```
+```{r}
+#distance to parks
+sf_use_s2(TRUE)
+housing_sf <- st_as_sf(housing, coords = c("Longitude", "Latitude"), crs = 4326, remove = FALSE)
+parks_sf <- st_as_sf(parks, coords = c("Longitude", "Latitude"), crs = 4326, remove = FALSE)
+art_sf <- st_as_sf(art, coords = c("longitude", "latitude"), crs = 4326, remove = FALSE)
+nearest_park <- st_nearest_feature(housing_sf, parks_sf)
+nearest_art <- st_nearest_feature(housing_sf, art_sf)
+distance_park <- st_distance(housing_sf, 
+                        parks_sf[nearest_park, ], 
+                        by_element = TRUE)
+distance_art <- st_distance(housing_sf, 
+                            art_sf[nearest_art, ],
+                            by_element = TRUE)
+housing$nearest_park <- parks_sf$park_name[nearest_park]
+housing$distance_park <- as.numeric(units::set_units(distance_park, 'm'))
+housing$nearest_art <- art_sf$name[nearest_art]
+housing$distance_art <- as.numeric(units::set_units(distance_art, 'm'))
+head(housing)
+```
+
