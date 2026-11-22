@@ -20,6 +20,7 @@ The preview shows you a rendered HTML copy of the contents of the editor. Conseq
 library(tidyverse)
 library(sf)
 library(jsonlite)
+library(modelsummary)
 ```
 
 ```{r}
@@ -33,8 +34,8 @@ head(data)
 housing <- data|>
   filter(City == 'Vancouver')|>
   select(Latitude, Longitude, Price, Bedrooms, Bathrooms, `Property Type`, `Square Footage`, Garage, Pool, Garden)|>
-  rename(Type = `Property Type`, Sqft = `Square Footage`)
-  
+  rename(Type = `Property Type`, Sqft = `Square Footage`)|>
+  filter(Type == 'Condo' | Type == 'Townhome' | Type == 'Single Family')
 glimpse(housing)
 summary(housing)
 ```
@@ -76,9 +77,61 @@ housing$nearest_park <- parks_sf$park_name[nearest_park]
 housing$distance_park <- as.numeric(units::set_units(distance_park, 'm'))
 housing$nearest_art <- art_sf$name[nearest_art]
 housing$distance_art <- as.numeric(units::set_units(distance_art, 'm'))
+housing<-select(housing, Latitude, Longitude, Price, Bedrooms, Bathrooms, Type, Sqft, distance_park, distance_art)
+
 head(housing)
 ```
 ```{r}
-#testing git
+url <- paste0(
+  "https://opendata.vancouver.ca/api/explore/v2.1/",
+  "catalog/datasets/local-area-boundary/exports/geojson"
+)
+neighbourhoods <- st_read(url)
+neighbourhoods <- st_transform(
+  neighbourhoods, 
+  st_crs(housing_sf)
+)
+housing_sf <- st_join(housing_sf, 
+                      neighbourhoods %>% select(name), 
+                      join = st_within, 
+                      left = TRUE)
+housing_sf <- housing_sf|>
+  rename(neighbourhood = name)
+housing <- housing_sf
+housing<-filter(housing, !is.na(neighbourhood))
+head(housing)
+```
+```{r}
+ggplot()+
+  geom_sf(data = neighbourhoods, 
+          fill = 'lightblue', 
+          color = 'white')+
+  geom_sf(data = housing, 
+          color = 'red', 
+          size = 0.3, 
+          alpha = 0.5)+
+  labs(title = 'Housing Locations in Vancouver')+
+  theme_minimal()
+```
+
+
+```{r}
+
+datasummary(
+  Price + Bedrooms + Bathrooms + Sqft +
+  distance_park + distance_art ~
+  N + Mean + SD + Min + Median + Max,
+  data = housing,
+  fmt = 2,
+  title = "Panel A: Numerical Variables"
+)
+
+# Categorical variables
+datasummary(
+  Type + neighbourhood ~ N + Percent(),
+  data = housing,
+  fmt = 2,
+  title = "Panel B: Property Types"
+)
 ```
 
