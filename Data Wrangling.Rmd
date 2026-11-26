@@ -21,6 +21,7 @@ library(tidyverse)
 library(sf)
 library(jsonlite)
 library(modelsummary)
+library(sandwich)
 ```
 
 ```{r}
@@ -97,16 +98,17 @@ housing_sf <- st_join(housing_sf,
                       left = TRUE)
 housing_sf <- housing_sf|>
   rename(neighbourhood = name)
-housing <- housing_sf
+housing$neighbourhood <- housing_sf$neighbourhood
 housing<-filter(housing, !is.na(neighbourhood))
 head(housing)
 ```
 ```{r}
+housing_sf<-filter(housing_sf, !is.na(neighbourhood))
 ggplot()+
   geom_sf(data = neighbourhoods, 
           fill = 'lightblue', 
           color = 'white')+
-  geom_sf(data = housing, 
+  geom_sf(data = housing_sf, 
           color = 'red', 
           size = 0.3, 
           alpha = 0.5)+
@@ -134,4 +136,120 @@ datasummary(
   title = "Panel B: Property Types"
 )
 ```
+```{r}
+housing <- housing|>
+  mutate(Type = factor(Type), neighbourhood = factor(neighbourhood))
+housing$Type <- relevel(housing$Type, ref = "Townhome")
+model1 <- lm(log(Price) ~ log(Sqft), data = housing)
+model2 <- lm(log(Price) ~ log(Sqft) + neighbourhood, data = housing)
+model3 <- lm(log(Price) ~ log(Sqft) + Bathrooms + Bedrooms + Type, data = housing)
+model4 <- lm(log(Price) ~ (log(Sqft) + Bathrooms + Bedrooms)*Type, data = housing)
+model5 <- lm(log(Price) ~ (log(Sqft) + Bathrooms + Bedrooms)*Type + log(distance_park) + log(distance_art), data = housing)
+model6 <- lm(log(Price) ~ (log(Sqft) + Bathrooms + Bedrooms)*Type + log(distance_park) + log(distance_art) + neighbourhood, data = housing)
 
+models <- list(
+    "Model 1" = model1,
+    "Model 2" = model2,
+    "Model 3" = model3,
+    "Model 4" = model4,
+    "Model 5" = model5,
+    "Model 6" = model6
+)
+additional_rows <- data.frame(
+    term = c("Interaction Terms", "Neighbourhood FE"),
+    "Model 1" = c("No", "No"),
+    "Model 2" = c("No", "Yes"),
+    "Model 3" = c("No", "No"),
+    "Model 4" = c("Yes", "No"),
+    "Model 5" = c("Yes", "No"),
+    "Model 6" = c("Yes", "Yes"),
+    check.names = FALSE
+)
+modelsummary(
+    models,
+    title = "Determinants of Housing Prices in Vancouver",
+    estimate = "{estimate}{stars}",
+    statistic = "({std.error})",
+    stars = c("*" = 0.10, "**" = 0.05, "***" = 0.01),
+    fmt = 4,
+    vcov = "HC3",
+    coef_omit = "^neighbourhood",
+    coef_rename = c(
+        "log(Sqft)" = "Log(Square Footage)",
+        "log(distance_park)" = "Log(Distance to Park)",
+        "log(distance_art)" = "Log(Distance to Public Art)",
+        "TypeCondo" = "Condo",
+        "TypeSingle Family" = "Single Family"
+    ),
+    gof_map = c(
+        "nobs",
+        "r.squared",
+        "adj.r.squared",
+        "rmse",
+        "AIC",
+        "BIC"
+    ),
+    # Add interaction and fixed effect indicators
+    add_rows = additional_rows,
+
+    notes = c(
+        "Dependent variable: log(Price).",
+        "HC3 robust standard errors in parentheses.",
+        "Reference property type: Townhome."
+    )
+)
+
+```
+```{r}
+modelplot(
+    models,
+    vcov = "HC3",
+    conf_level = 0.95,
+    coef_map = c(
+        "log(Sqft)" = "Log(Square Footage)",
+        "Bathrooms" = "Bathrooms",
+        "Bedrooms" = "Bedrooms",
+        "log(distance_park)" = "Log(Distance to Park)",
+        "log(distance_art)" = "Log(Distance to Public Art)"
+    )
+) +
+    geom_vline(
+        xintercept = 0,
+        linetype = "dashed"
+    ) +
+    labs(
+        title = "Coefficient Estimates Across Models",
+        subtitle = "95% Robust Confidence Intervals",
+        x = "Estimated Coefficient",
+        y = NULL,
+        colour = "Regression Model"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+
+modelplot(
+    list(
+        "Model 5: Without FE" = model5,
+        "Model 6: With FE" = model6
+    ),
+    vcov = "HC3",
+    conf_level = 0.95,
+    coef_map = c(
+        "log(distance_park)" = "Distance to Park (Log)",
+        "log(distance_art)" = "Distance to Public Art (Log)"
+    )
+) +
+    geom_vline(
+        xintercept = 0,
+        linetype = "dashed"
+    ) +
+    labs(
+        title = "Public Amenities and Housing Prices",
+        subtitle = "With and Without Neighbourhood Fixed Effects",
+        x = "Estimated Elasticity",
+        y = NULL,
+        colour = "Model"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+```
