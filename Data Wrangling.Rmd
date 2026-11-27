@@ -284,3 +284,101 @@ modelplot(
   theme_minimal() +
   theme(legend.position = "bottom")
 ```
+```{r}
+housing_2 <- housing |>
+  mutate(pricepersqft = log(Price/Sqft))|>
+  select(pricepersqft, log_Sqft, Type, neighbourhood, Bathrooms, Bedrooms, log_distance_park, log_distance_art) 
+housing_2 <- housing_2|>
+  mutate(Type = factor(Type), neighbourhood = factor(neighbourhood))
+
+housing_2$Type <- relevel(housing_2$Type, ref = "Townhome")
+
+model7 <- lm(pricepersqft ~ (log_Sqft + Bathrooms + Bedrooms)*Type +
+               log_distance_park + log_distance_art + neighbourhood, data = housing_2)
+model8 <- lm(pricepersqft ~ log_distance_park + log_distance_art + neighbourhood, data = housing_2)
+model9 <- lm(pricepersqft ~ log_distance_park + log_distance_art, data = housing_2)
+models2 <- list(
+  "Model 7" = model7,
+  "Model 8" = model8,
+  "Model 9" = model9
+)
+
+additional_rows <- data.frame(
+  term = c("Interaction Terms", "Neighbourhood FE"),
+  "Model 7" = c("Yes", "Yes"),
+  "Model 8" = c("No",  "Yes"),
+  "Model 9" = c("No",  "No"),
+  check.names = FALSE
+)
+
+modelsummary(
+  models2,                                   # <- was `models`
+  title = "Determinants of Housing Prices per Sqft in Vancouver",
+  estimate = "{estimate}{stars}",
+  statistic = "({std.error})",
+  stars = c("*" = 0.10, "**" = 0.05, "***" = 0.01),
+  fmt = 4,
+  vcov = "HC3",
+  coef_omit = "^neighbourhood",
+  coef_rename = c(
+    "log_Sqft"           = "Log(Square Footage)",
+    "Bathrooms"          = "Bathrooms",
+    "Bedrooms"           = "Bedrooms",
+    "log_distance_park"  = "Log(Distance to Park)",
+    "log_distance_art"   = "Log(Distance to Public Art)",
+    "TypeCondo"          = "Condo",
+    "TypeSingle Family"  = "Single Family"
+  ),
+  gof_map = c("nobs", "r.squared", "adj.r.squared", "rmse", "AIC", "BIC"),
+  add_rows = additional_rows,
+  notes = c(
+    "Dependent variable: log(Price/Sqft).",
+    "HC3 robust standard errors in parentheses.",
+    "Reference property type: Townhome."
+  )
+)
+
+```
+```{r}
+# Plot 1: amenity coefficients across the three models
+modelplot(
+  list("Model 7: Controls + interactions + FE" = model7,
+       "Model 8: Amenities + FE"               = model8,
+       "Model 9: Amenities only"               = model9),
+  vcov = "HC3",
+  conf_level = 0.95,
+  coef_map = c(
+    "log_distance_park" = "Log(Distance to Park)",
+    "log_distance_art"  = "Log(Distance to Public Art)"
+  )
+) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(
+    title    = "Amenity Coefficients Across Models",
+    subtitle = "Outcome: log price per sq ft; 95% robust confidence intervals",
+    x = "Estimated Elasticity", y = NULL,
+    colour = "Regression Model"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# Plot 2: with vs without neighbourhood fixed effects
+modelplot(
+  list("Model 9: Without FE" = model9, "Model 8: With FE" = model8),
+  vcov = "HC3",
+  conf_level = 0.95,
+  coef_map = c(
+    "log_distance_park" = "Distance to Park (Log)",
+    "log_distance_art"  = "Distance to Public Art (Log)"
+  )
+) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(
+    title    = "Public Amenities and Housing Prices per Sq Ft",
+    subtitle = "With and without neighbourhood fixed effects",
+    x = "Estimated Elasticity", y = NULL,
+    colour = "Model"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
